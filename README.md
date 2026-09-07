@@ -129,8 +129,14 @@ for the full behavior.
 
 compose-lint grades the configuration Compose actually runs, not just the
 file you name: the sibling `compose.override.yml` is merged, the sibling
-`.env` is resolved, `env_file:` targets are graded — and a part of the stack
-it *cannot* see is an error, never a silent pass.
+`.env` is resolved, `env_file:` targets are graded, `include:` and cross-file
+`extends:` are followed — and a part of the stack it *cannot* see is an error,
+never a silent pass.
+
+Everything it opens is a document the one you named routes it to, and every
+one of them has to resolve inside that file's own directory. Nothing outside
+the project is read, no matter what the document says, and no registry, daemon
+or image is consulted at all.
 
 **Overlays are merged.** `docker compose up` merges a `compose.override.yml`
 sitting beside the base file, with no flag and no opt-in, so compose-lint
@@ -159,9 +165,9 @@ changing what deploys. Only those two rules read env files; a finding names
 the key and the file, **never the value**, and a path resolving outside the
 project directory is refused rather than read.
 
-**A cross-file `extends: {file: ...}` is followed when it stays inside the project** ([ADR-036](docs/adr/036-resolve-references-that-stay-inside-the-project.md)), under the same containment rule as `env_file:`: the base is read and merged, so hardening it declares counts and danger it declares is found. Its own relative paths resolve against the base file's directory and its `${VAR}` values come from the project's `.env`, which is what Compose does.
+**`include:` and cross-file `extends: {file: ...}` are followed when they stay inside the project** ([ADR-036](docs/adr/036-resolve-references-that-stay-inside-the-project.md)), under the same containment rule as `env_file:`: the referenced documents are read and merged, so hardening they declare counts and danger they declare is found. An include-only root — no services of its own, the monorepo idiom — is lintable rather than refused. Each document's own relative paths resolve against its own directory, and the merge order follows Compose's, which is not the one `-f a -f b` uses: the including file wins, and an earlier `include:` entry beats a later one.
 
-**Coverage gaps.** What is *not* followed is still an error rather than a quiet pass, because reporting clean over a partial view is the one failure mode a merge gate cannot have: `include:`, and an `extends:` reference that leaves the project directory, is missing, is interpolated, or fails the bounded read. A gap means exit 2, a JSON `errors[]` entry, and a SARIF `toolExecutionNotifications` record, and the message says which of those it was. Lint the merged output (`docker compose config`) to cover everything, or pass `--allow-partial-coverage` to accept the gap and grade what is visible.
+**Coverage gaps.** What is *not* followed is still an error rather than a quiet pass, because reporting clean over a partial view is the one failure mode a merge gate cannot have: a reference that leaves the project directory, is missing, is interpolated, is a cycle, or fails the bounded read. A gap means exit 2, a JSON `errors[]` entry, and a SARIF `toolExecutionNotifications` record, and the message says which of those it was. Lint the merged output (`docker compose config`) to cover everything, or pass `--allow-partial-coverage` to accept the gap and grade what is visible.
 ## How it compares
 
 | Tool | Compose security rules | Auto-fix | Scope | Zero config |
